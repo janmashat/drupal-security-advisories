@@ -149,6 +149,87 @@ foreach ($results as $result) {
   }
 }
 
+// Unsupported branches
+$allurl = 'https://updates.drupal.org/release-history/project-list/all';
+$allxml = simplexml_load_string($client->get($allurl)->getBody());
+$projectpath = 'https://www.drupal.org/project/';
+$projectlist = array();
+
+foreach ($allxml->project as $project) {
+  if (str_starts_with($project->link, $projectpath)) {
+    $projectlink = explode('/', $project->link);
+    $projectlist[] = end($projectlink);
+  }
+}
+
+foreach ($projectlist as $projectname) {
+  $projurl = "https://updates.drupal.org/release-history/$projectname/current";
+  $projxml = simplexml_load_string($client->get($projurl)->getBody());
+
+  if ($projxml->supported_branches) {
+    $supbranches = explode(',', $projxml->supported_branches);
+
+    // Create list of versions, excluding those not covered and marking those opting out
+    $versionlist = array();
+    foreach ($projxml->releases->release as $thisrelease) {
+      if ($thisrelease->security == 'Project has not opted into security advisory coverage!') {
+        $versionlist = array();
+        $versionlist[] = 'optout';
+        break;
+      } elseif (str_contains($thisrelease->security, 'releases are not covered by Drupal security advisories.')) {
+        continue;
+      } else {
+        $versionlist[] = isset($thisrelease->version) ? (string)$thisrelease->version : false;
+      }
+    }
+
+    // Remove supported versions from list
+    foreach ($supbranches as $supbranch) {
+      foreach($versionlist as $key => $thisversion){
+        if (str_starts_with($thisversion, $supbranch)) {
+          unset($versionlist[$key]);
+        }
+      }
+    }
+
+    // Ignore non-release versions and trim *-
+    foreach($versionlist as $constraint){
+      if ($constraint == 'optout' ) {
+        $conflict["8"]['drupal/' . $projectname][] = "*";
+        $unsupported[] = $projectname;
+        break;
+      }
+      if (str_contains($constraint, '-')) {
+        $constraint = ltrim(strstr($constraint, '-'), '-');
+      }
+      try {
+        $conflict['8']['drupal/' . $projectname][] = $constraint;
+      } catch (\Exception $e) {
+        // @todo: log exception
+        continue;
+      }
+    }
+
+  } elseif (str_contains($projxml->project_status, 'unsupported')) {
+    try {
+      $conflict["8"]['drupal/' . $projectname][] = "*";
+      $unsupported[] = $projectname;
+    } catch (\Exception $e) {
+      // @todo: log exception
+      continue;
+    }
+
+  } elseif (str_contains($projxml[0], 'No release history')) {
+    try {
+      $conflict["8"]['drupal/' . $projectname][] = "*";
+      $unsupported[] = $projectname;
+    } catch (\Exception $e) {
+      // @todo: log exception
+      continue;
+    }
+  }
+}
+
 $target = [
   7 => 'build-7.x',
   8 => 'build-9.x',
@@ -157,7 +238,7 @@ $target = [
 foreach ($conflict as $core_compat => $packages) {
   $composer = [
     'name' => 'drupal-composer/drupal-security-advisories',
-    'description' => 'Prevents installation of composer packages with known security vulnerabilities',
+    'description' => 'Prevents installation of composer packages not covered by Drupal\'s security advisory policy',
     'type' => 'metapackage',
     'license' => 'GPL-2.0-or-later',
     'conflict' => []
