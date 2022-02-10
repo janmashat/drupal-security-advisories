@@ -125,6 +125,30 @@ foreach ($results as $result) {
   }
 }
 
+// Unsupported projects
+$results = fetchAllData('https://www.drupal.org/api-d7/node.json?field_security_advisory_coverage=revoked', $client);
+foreach ($results as $result) {
+
+  // Skip releases with incomplete data.
+  if (!property_exists($result, 'field_project_machine_name')) {
+    continue;
+  }
+
+  try {
+    $conflict["7"]['drupal/' . $result->field_project_machine_name][] = "*";
+  } catch (\Exception $e) {
+    // @todo: log exception
+    continue;
+  }
+
+  try {
+    $conflict["8"]['drupal/' . $result->field_project_machine_name][] = "*";
+  } catch (\Exception $e) {
+    // @todo: log exception
+    continue;
+  }
+}
+
 $target = [
   7 => 'build-7.x',
   8 => 'build-9.x',
