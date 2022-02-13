@@ -171,16 +171,42 @@ foreach ($projectlist as $projectname) {
 
     // Create list of versions, marking those opting out and separating non-stable
     $versionlist = array();
-    $nonstablelist = array();
+    $versionlistdev = array();
+    $versionlistns = array();
     foreach ($projxml->releases->release as $thisrelease) {
       if ($thisrelease->security == 'Project has not opted into security advisory coverage!') {
         $versionlist = array();
         $versionlist[] = 'optout';
         break;
+      } elseif (str_contains($thisrelease->security, 'Dev releases are not covered by Drupal security advisories.')) {
+        $versionlistdev[] = isset($thisrelease->version) ? (string)$thisrelease->version : false;
       } elseif (str_contains($thisrelease->security, 'releases are not covered by Drupal security advisories.')) {
-        $nonstablelist[] = isset($thisrelease->version) ? (string)$thisrelease->version : false;
+        $versionlistns[] = isset($thisrelease->version) ? (string)$thisrelease->version : false;
       } else {
         $versionlist[] = isset($thisrelease->version) ? (string)$thisrelease->version : false;
+      }
+    }
+
+    // Handle dev versions
+    foreach($versionlistdev as $constraint){
+      try {
+        $conflict['8']['drupal/' . $projectname][] = $constraint;
+      } catch (\Exception $e) {
+        // @todo: log exception
+        continue;
+      }
+    }
+
+    // Handle non-stable versions and trim *x-
+    foreach($versionlistns as $constraint){
+      if (str_contains($constraint, 'x-')) {
+        $constraint = ltrim(strstr($constraint, '-'), '-');
+      }
+      try {
+        $conflict['8']['drupal/' . $projectname][] = $constraint;
+      } catch (\Exception $e) {
+        // @todo: log exception
+        continue;
       }
     }
 
@@ -200,23 +226,8 @@ foreach ($projectlist as $projectname) {
         $unsupported[] = $projectname;
         break;
       }
-      if (str_contains($constraint, '-')) {
+      if (str_contains($constraint, 'x-')) {
         $constraint = ltrim(strstr($constraint, '-'), '-');
-      }
-      try {
-        $conflict['8']['drupal/' . $projectname][] = $constraint;
-      } catch (\Exception $e) {
-        // @todo: log exception
-        continue;
-      }
-    }
-
-    // Handle non-stable versions and trim 8.x- and 9.x-
-    foreach($nonstablelist as $constraint){
-      if (str_contains($constraint, '8.x-')) {
-        $constraint = ltrim(strstr($constraint, '8.x-'), '8.x-');
-      } elseif (str_contains($constraint, '9.x-')) {
-        $constraint = ltrim(strstr($constraint, '9.x-'), '9.x');
       }
       try {
         $conflict['8']['drupal/' . $projectname][] = $constraint;
