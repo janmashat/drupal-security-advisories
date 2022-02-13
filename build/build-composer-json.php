@@ -169,15 +169,16 @@ foreach ($projectlist as $projectname) {
   if ($projxml->supported_branches) {
     $supbranches = explode(',', $projxml->supported_branches);
 
-    // Create list of versions, excluding those not covered and marking those opting out
+    // Create list of versions, marking those opting out and separating non-stable
     $versionlist = array();
+    $nonstablelist = array();
     foreach ($projxml->releases->release as $thisrelease) {
       if ($thisrelease->security == 'Project has not opted into security advisory coverage!') {
         $versionlist = array();
         $versionlist[] = 'optout';
         break;
       } elseif (str_contains($thisrelease->security, 'releases are not covered by Drupal security advisories.')) {
-        continue;
+        $nonstablelist[] = isset($thisrelease->version) ? (string)$thisrelease->version : false;
       } else {
         $versionlist[] = isset($thisrelease->version) ? (string)$thisrelease->version : false;
       }
@@ -192,7 +193,7 @@ foreach ($projectlist as $projectname) {
       }
     }
 
-    // Ignore non-release versions and trim *-
+    // Handle stable versions and trim *-
     foreach($versionlist as $constraint){
       if ($constraint == 'optout' ) {
         $conflict["8"]['drupal/' . $projectname][] = "*";
@@ -201,6 +202,21 @@ foreach ($projectlist as $projectname) {
       }
       if (str_contains($constraint, '-')) {
         $constraint = ltrim(strstr($constraint, '-'), '-');
+      }
+      try {
+        $conflict['8']['drupal/' . $projectname][] = $constraint;
+      } catch (\Exception $e) {
+        // @todo: log exception
+        continue;
+      }
+    }
+
+    // Handle non-stable versions and trim 8.x- and 9.x-
+    foreach($nonstablelist as $constraint){
+      if (str_contains($constraint, '8.x-')) {
+        $constraint = ltrim(strstr($constraint, '8.x-'), '8.x-');
+      } elseif (str_contains($constraint, '9.x-')) {
+        $constraint = ltrim(strstr($constraint, '9.x-'), '9.x');
       }
       try {
         $conflict['8']['drupal/' . $projectname][] = $constraint;
